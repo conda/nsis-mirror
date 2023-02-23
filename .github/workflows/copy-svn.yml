@@ -15,17 +15,12 @@ on:
 
 jobs:
   copy:
-    runs-on: ubuntu-18.04
+    runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v3
 
       - name: Install git-svn
         run: sudo add-apt-repository ppa:git-core/ppa && sudo apt update && sudo apt install git-svn
-
-      - name: Configure git
-        run: |
-          git config --global user.email "kichik@gmail.com"
-          git config --global user.name "Amir Szekely"
 
       - name: Restore cache
         id: restore-cache
@@ -75,7 +70,9 @@ jobs:
 
       - name: SVN tags
         working-directory: svn2git
+        id: svn_tags
         run: |
+          new_tags=""
           git for-each-ref --format="%(refname:short) %(objectname)" refs/remotes/origin/tags \
           | while read BRANCH REF
             do
@@ -86,17 +83,16 @@ jobs:
                     echo tag already exists
                   else
                     git tag -a -m "$BODY" $TAG_NAME $REF^
+                    new_tags+="${TAG_NAME} "
                   fi
             done
+          # inner echo used to cheap-trim outer spaces
+          echo "new_tags=$(echo -n $new_tags)" >> $GITHUB_OUTPUT
 
       - name: Setup GitHub access
-        env:
-          SSH_KEY: ${{ secrets.SSH_KEY }}
         run: |
-          mkdir -p ~/.ssh
-          touch ~/.ssh/id_ed25519
-          chmod 600 ~/.ssh/id_ed25519
-          echo "$SSH_KEY" >> ~/.ssh/id_ed25519
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
       - name: Push to GitHub
         working-directory: svn2git
@@ -108,6 +104,17 @@ jobs:
           remote_repo="git@github.com:${GITHUB_REPOSITORY}.git"
           git push "$remote_repo" --all $flags
           git push "$remote_repo" --tags $flags
+
+      - name: Create issues
+        uses: JasonEtco/create-an-issue@v2
+        if: steps.svn_tags.outputs.new_tags != ''
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NEW_TAGS: ${{ steps.svn_tags.outputs.new_tags }}
+        with:
+          filename: .github/new-tag-template.md
+          assignees: jaimergp
+          update_existing: true
 
       - name: GC
         working-directory: svn2git

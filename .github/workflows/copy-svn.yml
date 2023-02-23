@@ -36,6 +36,11 @@ jobs:
       - name: Install git-svn
         run: sudo add-apt-repository ppa:git-core/ppa && sudo apt update && sudo apt install git-svn
 
+      - name: Configure git
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
       - name: Restore cache
         id: restore-cache
         uses: actions/cache/restore@v3
@@ -96,9 +101,6 @@ jobs:
         working-directory: svn2git
         if: github.event_name != 'pull_request'
         run: |
-          git config --global user.name "github-actions[bot]"
-          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
           flags=""
           if [[ "${{ github.event.inputs.force }}" = "yes" ]]; then
             flags="--force"

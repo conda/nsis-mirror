@@ -42,7 +42,7 @@ jobs:
         with:
           path: |
             svn2git
-          key: ${{ github.workflow }}-${{ github.ref_name }}
+          key: svn2git-${{ github.event.pull_request.number || github.ref_name }}
 
       - name: Initial SVN clone
         if: steps.restore-cache.outputs.cache-hit != 'true'
@@ -69,7 +69,7 @@ jobs:
             git checkout -b "$local_branch" "$remote_branch" || git checkout "$local_branch"
             git svn rebase
           done
-          git checkout "${GITHUB_REF_NAME}"
+          git checkout ${GITHUB_REF}
 
       - name: SVN tags
         working-directory: svn2git
@@ -127,14 +127,16 @@ jobs:
 
       - name: GC
         working-directory: svn2git
+        if: always()
         run: |
-          echo run garbage collection so caching does not fail while files are changing
+          echo "run garbage collection so caching does not fail while files are changing"
           git gc --auto
 
       - name: Save cache
         id: save-cache
         uses: actions/cache/save@v3
+        if: always()
         with:
           path: |
             svn2git
-          key: ${{ github.workflow }}-${{ github.ref_name }}
+          key: svn2git-${{ github.event.pull_request.number || github.ref_name }}

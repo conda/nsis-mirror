@@ -47,6 +47,7 @@ jobs:
       - name: Initial SVN clone
         if: steps.restore-cache.outputs.cache-hit != 'true'
         run: |
+          git config --global init.defaultBranch main
           git svn clone -A.github/workflows/svn-authors -s https://svn.code.sf.net/p/nsis/code/NSIS svn2git
 
       - name: SVN fetch

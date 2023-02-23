@@ -41,11 +41,12 @@ jobs:
           echo "major_minor_ver=${major_minor_ver}" >> $GITHUB_ENV
       - name: Download NSIS
         run: |
+          set -x
           for suffix in "-src.tar.bz2" ".zip" "-log.zip" "-strlen_8192.zip"; do
             fn="nsis-${major_minor_ver}${suffix}"
-            curl -sL -o "${fn}" "https://sourceforge.net/projects/nsis/files/NSIS%20${major_ver}/${major_minor_ver}/${fn}/download" 
+            curl -L -o "${fn}" "https://sourceforge.net/projects/nsis/files/NSIS%20${major_ver}/${major_minor_ver}/${fn}/download" 
           done
-          curl -sL -o "RELEASE.html" "https://sourceforge.net/projects/nsis/files/NSIS%20${major_ver}/${major_minor_ver}/RELEASE.html/download"      
+          curl -L -o "RELEASE.html" "https://sourceforge.net/projects/nsis/files/NSIS%20${major_ver}/${major_minor_ver}/RELEASE.html/download"      
       - name: Release
         uses: softprops/action-gh-release@v1
         if: github.event_name == 'push'

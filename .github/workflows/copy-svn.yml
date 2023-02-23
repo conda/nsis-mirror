@@ -9,6 +9,8 @@ on:
     inputs:
       force:
         description: 'Force push (CAREFUL!)'     
+        options: ["yes", "no"]
+        type: choice
         required: false
   schedule:
     - cron:  '4 10 * * *'

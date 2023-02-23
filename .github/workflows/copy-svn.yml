@@ -80,22 +80,18 @@ jobs:
         working-directory: svn2git
         id: svn_tags
         run: |
-          new_tags=""
           git for-each-ref --format="%(refname:short) %(objectname)" refs/remotes/origin/tags \
           | while read BRANCH REF
             do
-                  TAG_NAME=`echo $BRANCH | cut -d / -f 3-`
-                  BODY="$(git log -1 --format=format:%B $REF)"
-                  echo "ref=$REF parent=$(git rev-parse $REF^) tagname=$TAG_NAME body=$BODY" >&2
-                  if [ $(git tag -l "$TAG_NAME") ]; then
-                    echo tag already exists
-                  else
-                    git tag -a -m "$BODY" $TAG_NAME $REF^
-                    new_tags+="${TAG_NAME} "
-                  fi
+              TAG_NAME=$(echo $BRANCH | cut -d / -f 3-)
+              BODY="$(git log -1 --format=format:%B $REF)"
+              echo "ref=$REF parent=$(git rev-parse $REF^) tagname=$TAG_NAME body=$BODY" >&2
+              if [ $(git tag -l "$TAG_NAME") ]; then
+                echo tag already exists
+              else
+                git tag -a -m "$BODY" $TAG_NAME $REF^
+              fi
             done
-          # inner echo used to cheap-trim outer spaces
-          echo "new_tags=$(echo -n $new_tags)" >> $GITHUB_OUTPUT
 
       - name: Push to GitHub
         working-directory: svn2git
@@ -108,24 +104,6 @@ jobs:
           remote_repo="git@github.com:${GITHUB_REPOSITORY}.git"
           git push "$remote_repo" --all $flags
           git push "$remote_repo" --tags $flags
-
-      - name: Create issues (dry-run)
-        if: github.event_name == 'pull_request' && steps.svn_tags.outputs.new_tags != ''
-        env:
-          NEW_TAGS: ${{ steps.svn_tags.outputs.new_tags }}
-        run: |
-          echo "Would have created an issue for tags: ${NEW_TAGS}."
-
-      - name: Create issues
-        uses: JasonEtco/create-an-issue@v2
-        if: github.event_name != 'pull_request' && steps.svn_tags.outputs.new_tags != ''
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          NEW_TAGS: ${{ steps.svn_tags.outputs.new_tags }}
-        with:
-          filename: .github/new-tag-template.md
-          assignees: jaimergp
-          update_existing: true
 
       - name: GC
         working-directory: svn2git

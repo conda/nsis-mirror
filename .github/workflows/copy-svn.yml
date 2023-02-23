@@ -4,11 +4,11 @@
 # git commit -m "xxx" * && git push -f && gh workflow run -R kichik/nsis-travis copy-svn.yml -f force=yes
 
 name: Copy from SourceForge Subversion
-on: 
+on:
   workflow_dispatch:
     inputs:
       force:
-        description: 'Force push (CAREFUL!)'     
+        description: 'Force push (CAREFUL!)'
         options: ["no", "yes"]
         type: choice
         required: false
@@ -17,6 +17,15 @@ on:
   pull_request:
     branches:
       - main
+
+concurrency:
+  # Concurrency group that uses the workflow name and PR number if available
+  # or commit SHA as a fallback. If a new build is triggered under that
+  # concurrency group while a previous build is running it will be canceled.
+  # Repeated pushes to a PR will cancel all previous builds, while multiple
+  # merges to main will not cancel.
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: true
 
 jobs:
   copy:
@@ -29,23 +38,11 @@ jobs:
 
       - name: Restore cache
         id: restore-cache
-        run: |
-          if git fetch origin svn2git-cache; then
-            git checkout svn2git-cache
-          else
-            git checkout --orphan svn2git-cache
-            git rm -rf --cached .
-            git add .github/workflows/*
-            git commit -m "Empty cache"
-            echo '::set-output name=cache-hit::false'
-          fi
-          
-          if [ -f svn2git-cache.tar.gz ]; then
-            tar xzf svn2git-cache.tar.gz
-            echo '::set-output name=cache-hit::true'
-          else
-            echo '::set-output name=cache-hit::false'
-          fi
+        uses: actions/cache/restore@v3
+        with:
+          path: |
+            svn2git
+          key: ${{ github.workflow }}-${{ github.ref_name }}
 
       - name: Initial SVN clone
         if: steps.restore-cache.outputs.cache-hit != 'true'
@@ -66,12 +63,12 @@ jobs:
               echo ignoring weird branch $remote_branch
               continue
             fi
-            
+
             local_branch=`echo $remote_branch | cut -d / -f 2-`
             git checkout -b "$local_branch" "$remote_branch" || git checkout "$local_branch"
             git svn rebase
           done
-          git checkout master
+          git checkout "${GITHUB_REF_NAME}"
 
       - name: SVN tags
         working-directory: svn2git
@@ -100,6 +97,7 @@ jobs:
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
           flags=""
           if [[ "${{ github.event.inputs.force }}" = "yes" ]]; then
             flags="--force"
@@ -133,11 +131,9 @@ jobs:
           git gc --auto
 
       - name: Save cache
-        run: |
-          rm -f svn2git-cache.tar.gz
-          tar czf svn2git-cache.tar.gz svn2git
-          git add svn2git-cache.tar.gz
-          cp svn2git/.github/workflows/* .github/workflows/
-          git add .github/workflows/*
-          git commit --amend -m "update cache" svn2git-cache.tar.gz
-          git push --force git@github.com:${GITHUB_REPOSITORY}.git svn2git-cache
+        id: save-cache
+        uses: actions/cache/save@v3
+        with:
+          path: |
+            svn2git
+          key: ${{ github.workflow }}-${{ github.ref_name }}

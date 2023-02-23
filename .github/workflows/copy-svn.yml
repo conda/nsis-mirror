@@ -69,7 +69,7 @@ jobs:
             git checkout -b "$local_branch" "$remote_branch" || git checkout "$local_branch"
             git svn rebase
           done
-          git checkout ${GITHUB_REF}
+          git checkout main
 
       - name: SVN tags
         working-directory: svn2git

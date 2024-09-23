@@ -107,7 +107,7 @@ jobs:
             flags="--force"
           fi
           remote_repo="https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${GITHUB_REPOSITORY}.git"
-          git pull "$remote_repo" main --no-rebase --tags -X theirs
+          git pull "$remote_repo" main --no-rebase -X theirs
           git push "$remote_repo" --all $flags
           git push "$remote_repo" --tags $flags
 

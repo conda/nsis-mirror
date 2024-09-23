@@ -4,17 +4,36 @@
 # git commit -m "xxx" * && git push -f && gh workflow run -R kichik/nsis-travis copy-svn.yml -f force=yes
 
 name: Copy from SourceForge Subversion
-on: 
+on:
   workflow_dispatch:
     inputs:
       force:
         description: 'Force push (CAREFUL!)'
+        options: ["no", "yes"]
+        type: choice
         required: false
   schedule:
     - cron:  '4 10 * * *'
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+concurrency:
+  # Concurrency group that uses the workflow name and PR number if available
+  # or commit SHA as a fallback. If a new build is triggered under that
+  # concurrency group while a previous build is running it will be canceled.
+  # Repeated pushes to a PR will cancel all previous builds, while multiple
+  # merges to main will not cancel.
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: true
 
 jobs:
   copy:
+    permissions:
+      contents: write  # for Git to git push
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v3
@@ -24,32 +43,21 @@ jobs:
 
       - name: Configure git
         run: |
-          git config --global user.email "kichik@gmail.com"
-          git config --global user.name "Amir Szekely"
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
       - name: Restore cache
         id: restore-cache
-        run: |
-          if git fetch origin svn2git-cache; then
-            git checkout svn2git-cache
-          else
-            git checkout --orphan svn2git-cache
-            git rm -rf --cached .
-            git add .github/workflows/*
-            git commit -m "Empty cache"
-            echo "cache-hit=false" >> $GITHUB_OUTPUT
-          fi
-          
-          if [ -f svn2git-cache.tar.gz ]; then
-            tar xzf svn2git-cache.tar.gz
-            echo "cache-hit=true" >> $GITHUB_OUTPUT
-          else
-            echo "cache-hit=false" >> $GITHUB_OUTPUT
-          fi
+        uses: actions/cache/restore@v3
+        with:
+          path: |
+            svn2git
+          key: svn2git-${{ github.event.pull_request.number || github.ref_name }}
 
       - name: Initial SVN clone
         if: steps.restore-cache.outputs.cache-hit != 'true'
         run: |
+          git config --global init.defaultBranch main
           git svn clone -A.github/workflows/svn-authors -s https://svn.code.sf.net/p/nsis/code/NSIS svn2git
 
       - name: SVN fetch
@@ -66,61 +74,55 @@ jobs:
               echo ignoring weird branch $remote_branch
               continue
             fi
-            
+
             local_branch=`echo $remote_branch | cut -d / -f 2-`
             git checkout -b "$local_branch" "$remote_branch" || git checkout "$local_branch"
             git svn rebase
           done
-          git checkout master
+          git checkout main  # this is the default branch inside `svn2git`
 
       - name: SVN tags
         working-directory: svn2git
+        id: svn_tags
         run: |
           git for-each-ref --format="%(refname:short) %(objectname)" refs/remotes/origin/tags \
           | while read BRANCH REF
             do
-              TAG_NAME=`echo $BRANCH | cut -d / -f 3-`
+              TAG_NAME=$(echo $BRANCH | cut -d / -f 3-)
               BODY="$(git log -1 --format=format:%B $REF)"
               echo "ref=$REF parent=$(git rev-parse $REF^) tagname=$TAG_NAME body=$BODY" >&2
-              if [ $(git tag -l "$TAG_NAME") ]; then
-                echo tag already exists
+              if [ $(git tag -l "$TAG_NAME" 2>/dev/null) ]; then
+                echo "tag already exists"
               else
                 git tag -a -m "$BODY" $TAG_NAME $REF^
               fi
             done
 
-      - name: Setup GitHub access
-        env:
-          SSH_KEY: ${{ secrets.SSH_KEY }}
-        run: |
-          mkdir -p ~/.ssh
-          touch ~/.ssh/id_ed25519
-          chmod 600 ~/.ssh/id_ed25519
-          echo "$SSH_KEY" >> ~/.ssh/id_ed25519
-
       - name: Push to GitHub
         working-directory: svn2git
+        if: github.event_name != 'pull_request'
         run: |
           flags=""
           if [[ "${{ github.event.inputs.force }}" = "yes" ]]; then
             flags="--force"
           fi
-          remote_repo="git@github.com:${GITHUB_REPOSITORY}.git"
+          remote_repo="https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${GITHUB_REPOSITORY}.git"
+          git pull "$remote_repo" main --no-rebase -X theirs
           git push "$remote_repo" --all $flags
           git push "$remote_repo" --tags $flags
 
       - name: GC
         working-directory: svn2git
+        if: always()
         run: |
-          echo run garbage collection so caching does not fail while files are changing
+          echo "run garbage collection so caching does not fail while files are changing"
           git gc --auto
 
       - name: Save cache
-        run: |
-          rm -f svn2git-cache.tar.gz
-          tar czf svn2git-cache.tar.gz svn2git
-          git add svn2git-cache.tar.gz
-          cp svn2git/.github/workflows/* .github/workflows/
-          git add .github/workflows/*
-          git commit --amend -m "update cache" svn2git-cache.tar.gz
-          git push --force git@github.com:${GITHUB_REPOSITORY}.git svn2git-cache
+        id: save-cache
+        uses: actions/cache/save@v3
+        if: always()
+        with:
+          path: |
+            svn2git
+          key: svn2git-${{ github.event.pull_request.number || github.ref_name }}
